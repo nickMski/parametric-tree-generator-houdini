@@ -1,0 +1,107 @@
+// Tree Generator VEX Code
+// This code generates a procedural tree with customizable parameters through UI sliders
+
+// UI Parameters
+float trunk_height = ch("trunk_height");     // Controls the overall height of the trunk
+float trunk_width = ch("trunk_width");       // Controls the base width of the trunk
+float branch_length = ch("branch_length");   // Controls the length of branches
+float branch_spread = ch("branch_spread");   // Controls how far branches spread from trunk
+float up_angle = ch("up_angle") * PI / 180.0;// Branch angle from vertical (converted to radians)
+int branches = chi("branches");              // Number of branches to generate
+float random_seed = ch("random_seed");       // Seed for randomization
+float branch_variation = ch("branch_variation"); // Controls variation in branch length
+
+// Initialize random seed
+int seed = int(random_seed * 1000) + @ptnum;
+float _dummy = rand(seed);  // Fix for ambiguous rand() call
+
+// Trunk Generation
+float height = trunk_height;
+vector pos = @P;
+int trunk_points = 10;  // Number of points for trunk smoothness
+vector last_trunk_pos = pos;
+int prev_point = -1;
+
+// Generate trunk points with natural curve
+for(int i=0; i <= trunk_points; i++) {
+    float t = float(i)/trunk_points;
+    
+    // Calculate vertical position
+    vector new_pos = pos + set(0, height * t, 0);
+    
+    // Add natural curve that scales with height
+    float curve = sin(t * PI) * 0.1 * height * rand(seed++);
+    new_pos += set(curve, 0, curve);
+    
+    // Add point and set width with smooth tapering
+    int point_num = addpoint(0, new_pos);
+    float width = trunk_width * pow((1.0 - t), 0.7);
+    setpointattrib(0, "width", point_num, width);
+    
+    // Connect points
+    if(prev_point != -1) {
+        addprim(0, "polyline", prev_point, point_num);
+    }
+    
+    prev_point = point_num;
+    last_trunk_pos = new_pos;
+}
+
+// Branch Generation
+int branch_points = 5;  // Points per branch for smoothness
+float droop = 0.3;     // Branch drooping factor
+
+for(int b=0; b < branches; b++) {
+    // Calculate branch start position
+    float start_height = height * (0.3 + 0.6 * rand(seed++));
+    vector branch_start = pos + set(0, start_height, 0);
+    
+    // Calculate branch angle and orientation
+    float angle = rand(seed++) * PI * 2;
+    float branch_up_angle = up_angle * (0.8 + rand(seed++) * 0.4);
+    
+    // Create start point
+    int start_point = addpoint(0, branch_start);
+    setpointattrib(0, "width", start_point, trunk_width * 0.3);
+    vector last_pos = branch_start;
+    
+    // Generate branch points
+    int prev_branch_point = start_point;
+    for(int i=1; i <= branch_points; i++) {
+        float t = float(i)/branch_points;
+        
+        // Calculate branch direction with droop
+        float droop_factor = t * t * droop;
+        vector current_dir = set(
+            cos(angle) * sin(branch_up_angle),
+            cos(branch_up_angle) * (1.0 - droop_factor),
+            sin(angle) * sin(branch_up_angle)
+        );
+        
+        // Add twist using quaternion rotation
+        float twist = sin(t * PI * 2) * 0.2;
+        vector axis = set(0,1,0);
+        matrix3 rot = qconvert(quaternion(axis, twist));
+        current_dir = current_dir * rot;
+        
+        // Calculate branch length with variation
+        float len = branch_length * (1.0 - branch_variation + rand(seed++) * branch_variation * 2.0);
+        vector offset = current_dir * (len/branch_points);
+        
+        // Add random variation scaled by branch_spread
+        offset += set(rand(seed++) - 0.5,
+                     (rand(seed++) - 0.5) * 0.5,
+                     rand(seed++) - 0.5) * branch_spread * t;
+        
+        // Create and connect new point
+        vector new_pos = last_pos + offset;
+        last_pos = new_pos;
+        
+        int new_point = addpoint(0, new_pos);
+        float branch_width = trunk_width * 0.3 * (1.0 - t * 0.8);
+        setpointattrib(0, "width", new_point, branch_width);
+        
+        addprim(0, "polyline", prev_branch_point, new_point);
+        prev_branch_point = new_point;
+    }
+}
